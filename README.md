@@ -42,7 +42,7 @@ O cliente não inclui Electron. A janela utiliza Python + GTK 3 e consulta o ser
 ### Linux / Kubuntu — testado
 
 ```sh
-sudo apt install python3 python3-gi gir1.2-gtk-3.0 libnotify-bin
+sudo apt install python3 python3-gi gir1.2-gtk-3.0 python3-markdown-it libnotify-bin
 ./desktop/install-linux.sh
 ```
 
