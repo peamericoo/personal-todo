@@ -12,7 +12,7 @@ O Linux/Kubuntu é o caminho validado. O cliente usa GTK 3, Python e consultas M
 - Histórico mostra as tarefas atualmente concluídas e a última atualização, não um registro imutável de eventos.
 - O som original de conclusão usa `paplay` ou `pw-play` no Linux; `TODO_SOUND=0` o desativa.
 
-As divisórias laterais podem ser arrastadas e suas larguras ficam salvas localmente. Os calendários GTK selecionam prazos e lembretes. O editor aceita até três tags por atividade; as cores são atribuídas localmente de forma determinística e não são sincronizadas nem escolhidas pela IA.
+As divisórias laterais podem ser arrastadas e suas larguras ficam salvas localmente. Os calendários GTK selecionam prazos e lembretes. O editor aceita até três tags por atividade; clique com o botão direito em uma tag para escolher sua cor; essa escolha fica salva neste computador e não é sincronizada nem escolhida pela IA.
 
 ## Lembretes
 

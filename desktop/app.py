@@ -54,10 +54,10 @@ treeview.view:selected { background: #383d50; color: #e5e9ff; }
 scrollbar slider { background: #545764; min-width: 5px; border-radius: 3px; }
 '''
 
-def tag_label(text):
+def tag_label(text, selected_color=None):
     import hashlib
     palette=['#596b9b','#6b5e91','#427e73','#886b42','#8c596b','#536c7d']
-    color=palette[hashlib.sha256(text.casefold().encode()).digest()[0]%len(palette)]
+    color=selected_color or palette[hashlib.sha256(text.casefold().encode()).digest()[0]%len(palette)]
     w=label(text,'tagchip');provider=Gtk.CssProvider();provider.load_from_data(('.tagchip { background: '+color+'; color: #ffffff; }').encode());w.get_style_context().add_provider(provider,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION+1);return w
 
 def label(text='', style=None):
@@ -111,7 +111,7 @@ class App(Gtk.Window):
             b=nav_button(title,icon,lambda _, k=key:self.select_view(k)); self.nav[key]=b; side.pack_start(b,False,False,0)
         sep=Gtk.Separator(); sep.set_margin_top(10); sep.set_margin_bottom(8); side.pack_start(sep,False,False,0)
         cap=Gtk.Box(); cap.pack_start(label('Minhas listas','subtle'),True,True,7); cap.pack_end(icon_button('list-add-symbolic',lambda *_:self.editor(None,'grupo'),'Novo grupo'),False,False,0); side.pack_start(cap,False,False,0)
-        self.custom_icons=self.load_icons(); self.model=Gtk.TreeStore(str,str,int); self.tree=Gtk.TreeView(model=self.model); self.tree.set_headers_visible(False); self.tree.set_enable_search(False); self.tree.set_level_indentation(8); self.tree.connect('button-press-event',self.tree_context)
+        self.custom_icons=self.load_icons(); self.tag_colors=self.load_tag_colors(); self.model=Gtk.TreeStore(str,str,int); self.tree=Gtk.TreeView(model=self.model); self.tree.set_headers_visible(False); self.tree.set_enable_search(False); self.tree.set_level_indentation(8); self.tree.connect('button-press-event',self.tree_context)
         col=Gtk.TreeViewColumn(); pic=Gtk.CellRendererPixbuf(); col.pack_start(pic,False); col.add_attribute(pic,'icon-name',0); text=Gtk.CellRendererText(); text.set_property('ellipsize',3); text.set_property('ypad',7); text.set_property('xpad',6); col.pack_start(text,True); col.add_attribute(text,'text',1); self.tree.append_column(col)
         self.tree.get_selection().connect('changed',self.on_tree_select); self.tree.connect('row-expanded',self.on_tree_expanded); self.tree.connect('row-collapsed',self.on_tree_collapsed)
         tree_scroll=Gtk.ScrolledWindow(); tree_scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); tree_scroll.add(self.tree); side.pack_start(tree_scroll,True,True,0)
@@ -123,9 +123,9 @@ class App(Gtk.Window):
         self.scroll=Gtk.ScrolledWindow(); self.scroll.set_policy(Gtk.PolicyType.NEVER,Gtk.PolicyType.AUTOMATIC); content.pack_start(self.scroll,True,True,0)
         self.rows=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=3); self.scroll.add(self.rows)
         create=Gtk.Box(spacing=8); create.set_margin_top(12); self.quick=Gtk.Entry(); self.quick.set_placeholder_text('+  Adicionar tarefa'); self.quick.connect('activate',self.quick_add); create.pack_start(self.quick,True,True,0); content.pack_start(create,False,False,0)
-        self.detail_reveal=Gtk.Revealer(); self.detail_reveal.set_transition_type(Gtk.RevealerTransitionType.SLIDE_LEFT); self.detail_reveal.set_transition_duration(240); self.detail_reveal.get_style_context().add_class('detail'); self.right_pane.pack2(self.detail_reveal,False,False)
+        self.detail_reveal=Gtk.Revealer(); self.detail_reveal.set_transition_type(Gtk.RevealerTransitionType.SLIDE_LEFT); self.detail_reveal.set_transition_duration(240); self.detail_reveal.get_style_context().add_class('detail'); self.right_pane.pack2(self.detail_reveal,False,False); self.detail_reveal.connect('notify::child-revealed',self.detail_visibility_changed)
         self.detail=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=8); self.detail.set_size_request(240,-1); self.detail.set_border_width(18); self.detail_reveal.add(self.detail)
-        detail_top=Gtk.Box(); detail_top.pack_start(label('Detalhes','brand'),True,True,0); detail_top.pack_end(icon_button('window-close-symbolic',self.close_detail,'Fechar'),False,False,0); self.detail.pack_start(detail_top,False,False,0)
+        detail_top=Gtk.Box(); detail_top.pack_start(label('Detalhes','brand'),True,True,0); detail_top.pack_end(icon_button('pan-end-symbolic',self.close_detail,'Recolher detalhes'),False,False,0); self.detail.pack_start(detail_top,False,False,0)
         self.detail_status=label('','subtle'); self.detail.pack_start(self.detail_status,False,False,0)
         self.detail_fields=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=6); self.detail.pack_start(self.detail_fields,True,True,0)
         self.detail_title=Gtk.Entry(); self.detail_title.set_placeholder_text('Nome da tarefa'); self.detail_fields.pack_start(self.detail_title,False,False,0)
@@ -141,7 +141,7 @@ class App(Gtk.Window):
         self.detail_desc=Gtk.TextView(); self.detail_desc.set_wrap_mode(Gtk.WrapMode.WORD_CHAR); self.detail_desc.set_left_margin(8); self.detail_desc.set_right_margin(8); desc_scroll=Gtk.ScrolledWindow(); desc_scroll.set_min_content_height(120); desc_scroll.add(self.detail_desc); self.description_stack.add_named(desc_scroll,'edit')
         self.preview=Gtk.TextView(); self.preview.set_editable(False); self.preview.set_cursor_visible(False); self.preview.set_wrap_mode(Gtk.WrapMode.WORD_CHAR); self.preview.set_left_margin(10); self.preview.set_right_margin(10); preview_scroll=Gtk.ScrolledWindow(); preview_scroll.add(self.preview); self.description_stack.add_named(preview_scroll,'preview'); self.detail_fields.pack_start(self.description_stack,True,True,0)
         self.save_detail=Gtk.Button(label='Salvar alterações'); self.save_detail.get_style_context().add_class('selected'); self.save_detail.connect('clicked',self.save_panel); self.detail_fields.pack_start(self.save_detail,False,False,0)
-        self.left_pane.set_position(self.widths.get('left',260)); self._width_ready=False; self._width_timer=None; self.show_all(); self.tray=Tray(self); self.error_label.hide(); self.update_nav(); self.render_tasks(); self.detail_reveal.set_reveal_child(False)
+        self.left_pane.set_position(self.widths.get('left',260)); self._width_ready=False; self._width_timer=None; self.show_all(); self.tray=Tray(self); self.error_label.hide(); self.update_nav(); self.render_tasks(); self.detail_reveal.set_reveal_child(False); self.detail_reveal.hide()
         url,token=connection()
         if token and safe_url(url): self.client=Client(url,token); self.sync()
         else: GLib.idle_add(self.connect_dialog)
@@ -225,6 +225,26 @@ class App(Gtk.Window):
         # Orphaned items can occur while a page is still loading.
         if not self.partial: add(None,[i for i in containers if i['id'] not in seen])
         self.tree_updating=False
+    def tag_colors_path(self):
+        return self.icon_path().with_name('tag-colors.json')
+    def load_tag_colors(self):
+        palette={'#596b9b','#6b5e91','#427e73','#886b42','#8c596b','#536c7d'}
+        try:
+            data=json.loads(self.tag_colors_path().read_text());return {str(k):v for k,v in data.items() if v in palette}
+        except (OSError,ValueError,TypeError,AttributeError):return {}
+    def tag_widget(self,text):
+        box=Gtk.EventBox();box.add(tag_label(text,self.tag_colors.get(text.casefold())));box.set_tooltip_text('Clique com o botão direito para mudar a cor');box.connect('button-press-event',self.tag_context,text);return box
+    def tag_context(self,widget,event,text):
+        if event.button!=3:return False
+        menu=Gtk.Menu()
+        for name,color in [('Azul','#596b9b'),('Roxo','#6b5e91'),('Verde','#427e73'),('Âmbar','#886b42'),('Rosa','#8c596b'),('Cinza','#536c7d')]:
+            item=Gtk.MenuItem();item.add(tag_label(name,color));item.connect('activate',lambda _i,c=color:self.set_tag_color(text,c));menu.append(item)
+        menu.show_all();menu.popup_at_pointer(event);return True
+    def set_tag_color(self,text,color):
+        self.tag_colors[text.casefold()]=color
+        try:
+            path=self.tag_colors_path();path.parent.mkdir(mode=0o700,parents=True,exist_ok=True);tmp=path.with_suffix('.tmp');tmp.write_text(json.dumps(self.tag_colors,ensure_ascii=False));os.chmod(tmp,0o600);tmp.replace(path);self.render_tasks()
+        except OSError as e:self.error('Não foi possível salvar a cor: '+str(e))
     def widths_path(self):
         return self.icon_path().with_name('layout.json')
     def load_widths(self):
@@ -333,7 +353,7 @@ class App(Gtk.Window):
                 card=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=10); card.set_size_request(210,125); card.get_style_context().add_class('gridcard'); top=Gtk.Box(spacing=8); ck=Gtk.CheckButton(); ck.set_active(bool(item.get('concluida'))); ck.set_sensitive(item['id'] not in self.pending); ck.connect('toggled',self.toggle,item); top.pack_start(ck,False,False,0); top.pack_end(icon_button('document-edit-symbolic',lambda _,i=item:self.show_detail(i),'Detalhes'),False,False,0); card.pack_start(top,False,False,0)
                 name=label(item['titulo'],'tasktitle'); name.set_line_wrap(True); name.set_ellipsize(0); name.set_max_width_chars(28); click=Gtk.EventBox(); click.add(name); click.connect('button-press-event',lambda _w,_e,i=item:self.show_detail(i)); card.pack_start(click,True,True,0)
                 info=Gtk.Box(spacing=4); info.pack_start(label(item.get('prazo') or '', 'subtle'),False,False,0)
-                for tag in item.get('tags',[])[:3]: info.pack_start(tag_label(tag),False,False,0)
+                for tag in item.get('tags',[])[:3]: info.pack_start(self.tag_widget(tag),False,False,0)
                 card.pack_start(info,False,False,0); grid.add(card)
             self.rows.pack_start(grid,False,False,0); self.rows.show_all(); return
         def add(parent,depth,container):
@@ -348,7 +368,7 @@ class App(Gtk.Window):
                 name=label(item['titulo'],'tasktitle'); name.set_margin_top(8); name.set_margin_bottom(8)
                 if item.get('concluida'): name.get_style_context().add_class('done')
                 task_click=Gtk.EventBox(); task_click.set_can_focus(True); task_click.add(name); task_click.connect('button-press-event',lambda w,_e,i=item:(w.grab_focus(),self.show_detail(i))[1]); task_click.connect('key-press-event',self.task_key,item); row.pack_start(task_click,True,True,0)
-                for tag in item.get('tags',[])[:3]: row.pack_start(tag_label(tag),False,False,2)
+                for tag in item.get('tags',[])[:3]: row.pack_start(self.tag_widget(tag),False,False,2)
                 if self.view=='history' and item.get('atualizado_em_utc'): row.pack_start(label('Atualizada: '+item['atualizado_em_utc'][:10],'subtle'),False,False,6)
                 elif item.get('prazo'): row.pack_start(label(item['prazo'],'subtle'),False,False,6)
                 if item.get('lembrete_utc'):
@@ -418,10 +438,13 @@ class App(Gtk.Window):
     def upsert(self,item):
         self.generation+=1; self.items[item['id']]=item; self.details_cache[item['id']]=item; self.clear_error(); self.render_tree(); self.render_tasks()
         if self.partial and not self.pending: self.sync()
+    def detail_visibility_changed(self,reveal,*_):
+        if not reveal.get_reveal_child() and not reveal.get_child_revealed(): reveal.hide()
     def close_detail(self,*_):
         self.detail_generation+=1; self.detail_id=None; self.detail_reveal.set_reveal_child(False)
+        if not self.detail_reveal.get_child_revealed(): self.detail_reveal.hide()
     def show_detail(self,item):
-        self.detail_generation+=1; gen=self.detail_generation; self.detail_id=item['id']; self.detail_title.set_text(item['titulo']); self.detail_due.set_text(item.get('prazo') or ''); self.detail_reminder.set_text(''); self.detail_tags.set_text(''); self.detail_desc.get_buffer().set_text(''); self.detail_status.set_text('Carregando…'); self.detail_fields.set_sensitive(False); self.preview_button.set_active(False); self.detail_reveal.set_reveal_child(True)
+        self.detail_generation+=1; gen=self.detail_generation; self.detail_id=item['id']; self.detail_title.set_text(item['titulo']); self.detail_due.set_text(item.get('prazo') or ''); self.detail_reminder.set_text(''); self.detail_tags.set_text(''); self.detail_desc.get_buffer().set_text(''); self.detail_status.set_text('Carregando…'); self.detail_fields.set_sensitive(False); self.preview_button.set_active(False); self.detail_reveal.show(); self.right_pane.set_position(max(300,self.right_pane.get_allocated_width()-self.widths.get('right',350))); self.detail_reveal.set_reveal_child(True)
         def loaded(data):
             if self.detail_id != item['id'] or gen!=self.detail_generation: return False
             value=data['item']; self.details_cache[item['id']]=value; self.detail_title.set_text(value['titulo']); self.detail_due.set_text(value.get('prazo') or ''); self.detail_desc.get_buffer().set_text(value.get('descricao') or '')
