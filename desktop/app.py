@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 import gi
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, Gdk, GLib
+from gi.repository import Gtk, Gdk, GLib, Gio
 from tray import Tray
 from settings import connection, safe_url
 
@@ -455,4 +455,22 @@ class App(Gtk.Window):
             self.client=Client(u,t); self.items={}; self.details_cache={}; self.selected=None; self.sync()
         return False
 
-if __name__=='__main__': App(); Gtk.main()
+def main():
+    bus=None; registration=None; holder={}
+    try:
+        bus=Gio.bus_get_sync(Gio.BusType.SESSION,None)
+        name='org.peamericoo.PersonalTodo'
+        reply=bus.call_sync('org.freedesktop.DBus','/org/freedesktop/DBus','org.freedesktop.DBus','RequestName',GLib.Variant('(su)',(name,4)),GLib.VariantType.new('(u)'),Gio.DBusCallFlags.NONE,1000,None)
+        if reply.unpack()[0]!=1:
+            bus.call_sync(name,'/org/peamericoo/PersonalTodo','org.peamericoo.PersonalTodo','Open',None,None,Gio.DBusCallFlags.NONE,1500,None); return
+        xml='<node><interface name="org.peamericoo.PersonalTodo"><method name="Open"/></interface></node>'
+        def open_window(_c,_s,_p,_i,_m,_a,invocation):
+            app=holder.get('app')
+            if app:app.show();app.present()
+            invocation.return_value(None)
+        registration=bus.register_object('/org/peamericoo/PersonalTodo',Gio.DBusNodeInfo.new_for_xml(xml).interfaces[0],open_window,None,None)
+    except Exception: pass
+    holder['app']=App(); Gtk.main()
+    if bus and registration:bus.unregister_object(registration)
+
+if __name__=='__main__': main()
