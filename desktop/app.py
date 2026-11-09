@@ -97,8 +97,8 @@ class Client:
 
 class App(Gtk.Window):
     def __init__(self):
-        super().__init__(title='Personal To-Do'); self.set_icon_from_file(str(Path(__file__).with_name('app-icon.png'))); self.set_default_size(1100,720); self.set_size_request(720,480); self.connect('destroy',Gtk.main_quit); self.connect('delete-event',self.on_close)
-        self.client=None; self.items={}; self.details_cache={}; self.selected=None; self.view='tasks'; self.expanded=set(); self.generation=0; self.pending=set(); self.tree_updating=False; self.partial=False; self.layout='list'; self.history_items=[]; self.detail_id=None; self.detail_generation=0
+        super().__init__(title='Personal To-Do'); self.set_icon_from_file(str(Path(__file__).with_name('app-icon.png'))); self.set_default_size(1100,720); self.set_size_request(720,480); self.connect('destroy',Gtk.main_quit); self.connect('delete-event',self.on_close); self.connect('key-press-event',self.window_key)
+        self.client=None; self.items={}; self.details_cache={}; self.selected=None; self.view='tasks'; self.expanded=set(); self.generation=0; self.pending=set(); self.tree_updating=False; self.partial=False; self.layout='list'; self.history_items=[]; self.detail_id=None; self.detail_generation=0; self.active_task_id=None; self._detail_anim=0
         provider=Gtk.CssProvider(); provider.load_from_data(CSS); Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(),provider,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         root=Gtk.Box(); self.add(root)
         self.left_pane=Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL); self.right_pane=Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL); root.pack_start(self.left_pane,True,True,0); self.left_pane.pack2(self.right_pane,True,False); self.widths=self.load_widths(); self.left_pane.connect('notify::position',self.width_changed); self.right_pane.connect('notify::position',self.width_changed); self.right_pane.connect('size-allocate',self.initial_right_width)
@@ -255,7 +255,7 @@ class App(Gtk.Window):
         if not self._width_ready and allocation.width>500:
             self._width_ready=True; pane.set_position(max(300,allocation.width-self.widths.get('right',350)))
     def width_changed(self,pane,*_):
-        if not getattr(self,'_width_ready',False):return
+        if not getattr(self,'_width_ready',False) or getattr(self,'_detail_animating',False):return
         if self._width_timer:GLib.source_remove(self._width_timer)
         self._width_timer=GLib.timeout_add(400,self.persist_widths)
     def persist_widths(self):
@@ -283,9 +283,15 @@ class App(Gtk.Window):
             if with_time:value+=f' {hour.get_value_as_int():02d}:{minute.get_value_as_int():02d}'
             entry.set_text(value);pop.popdown()
         ok=Gtk.Button(label='Aplicar');ok.connect('clicked',apply);box.pack_start(ok,False,False,0);pop.show_all();pop.popup()
-    def task_key(self,widget,event,item):
-        if event.keyval==Gdk.KEY_space:self.quick_preview(item);return True
-        return False
+    def select_task(self,widget,item):
+        self.active_task_id=item['id'];widget.grab_focus();self.show_detail(item);return True
+    def window_key(self,_widget,event):
+        if event.keyval!=Gdk.KEY_space or event.state & (Gdk.ModifierType.CONTROL_MASK|Gdk.ModifierType.MOD1_MASK|Gdk.ModifierType.SUPER_MASK):return False
+        focus=self.get_focus()
+        if isinstance(focus,(Gtk.Entry,Gtk.TextView,Gtk.SpinButton,Gtk.SearchEntry,Gtk.CheckButton,Gtk.Button)):return False
+        item=self.items.get(self.active_task_id)
+        if not item or item.get('tipo')!='atividade':return False
+        self.quick_preview(item);return True
     def quick_preview(self,item):
         def loaded(data):
             value=data['item'];dialog=Gtk.Dialog(title=value['titulo'],transient_for=self,flags=Gtk.DialogFlags.MODAL);dialog.set_default_size(850,650);dialog.add_button('Fechar',Gtk.ResponseType.CLOSE);dialog.add_button('Editar',Gtk.ResponseType.OK)
@@ -351,7 +357,7 @@ class App(Gtk.Window):
             grid=Gtk.FlowBox(); grid.set_selection_mode(Gtk.SelectionMode.NONE); grid.set_homogeneous(True); grid.set_min_children_per_line(1); grid.set_max_children_per_line(3); grid.set_row_spacing(8); grid.set_column_spacing(8)
             for item in sorted(tasks,key=lambda x:(bool(x.get('concluida')),x['titulo'].casefold())):
                 card=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=10); card.set_size_request(210,125); card.get_style_context().add_class('gridcard'); top=Gtk.Box(spacing=8); ck=Gtk.CheckButton(); ck.set_active(bool(item.get('concluida'))); ck.set_sensitive(item['id'] not in self.pending); ck.connect('toggled',self.toggle,item); top.pack_start(ck,False,False,0); top.pack_end(icon_button('document-edit-symbolic',lambda _,i=item:self.show_detail(i),'Detalhes'),False,False,0); card.pack_start(top,False,False,0)
-                name=label(item['titulo'],'tasktitle'); name.set_line_wrap(True); name.set_ellipsize(0); name.set_max_width_chars(28); click=Gtk.EventBox(); click.add(name); click.connect('button-press-event',lambda _w,_e,i=item:self.show_detail(i)); card.pack_start(click,True,True,0)
+                name=label(item['titulo'],'tasktitle'); name.set_line_wrap(True); name.set_ellipsize(0); name.set_max_width_chars(28); click=Gtk.EventBox(); click.set_can_focus(True); click.add(name); click.connect('button-press-event',lambda w,_e,i=item:self.select_task(w,i)); card.pack_start(click,True,True,0)
                 info=Gtk.Box(spacing=4); info.pack_start(label(item.get('prazo') or '', 'subtle'),False,False,0)
                 for tag in item.get('tags',[])[:3]: info.pack_start(self.tag_widget(tag),False,False,0)
                 card.pack_start(info,False,False,0); grid.add(card)
@@ -367,7 +373,7 @@ class App(Gtk.Window):
                 ck=Gtk.CheckButton(); ck.set_active(bool(item.get('concluida'))); ck.set_sensitive(item['id'] not in self.pending); ck.connect('toggled',self.toggle,item); row.pack_start(ck,False,False,0)
                 name=label(item['titulo'],'tasktitle'); name.set_margin_top(8); name.set_margin_bottom(8)
                 if item.get('concluida'): name.get_style_context().add_class('done')
-                task_click=Gtk.EventBox(); task_click.set_can_focus(True); task_click.add(name); task_click.connect('button-press-event',lambda w,_e,i=item:(w.grab_focus(),self.show_detail(i))[1]); task_click.connect('key-press-event',self.task_key,item); row.pack_start(task_click,True,True,0)
+                task_click=Gtk.EventBox(); task_click.set_can_focus(True); task_click.add(name); task_click.connect('button-press-event',lambda w,_e,i=item:self.select_task(w,i)); row.pack_start(task_click,True,True,0)
                 for tag in item.get('tags',[])[:3]: row.pack_start(self.tag_widget(tag),False,False,2)
                 if self.view=='history' and item.get('atualizado_em_utc'): row.pack_start(label('Atualizada: '+item['atualizado_em_utc'][:10],'subtle'),False,False,6)
                 elif item.get('prazo'): row.pack_start(label(item['prazo'],'subtle'),False,False,6)
@@ -439,19 +445,43 @@ class App(Gtk.Window):
         self.generation+=1; self.items[item['id']]=item; self.details_cache[item['id']]=item; self.clear_error(); self.render_tree(); self.render_tasks()
         if self.partial and not self.pending: self.sync()
     def detail_visibility_changed(self,reveal,*_):
-        if not reveal.get_reveal_child() and not reveal.get_child_revealed(): reveal.hide()
+        pass
+    def animate_detail(self,opening):
+        self._detail_anim+=1;generation=self._detail_anim;self._detail_animating=True
+        if self._width_timer:GLib.source_remove(self._width_timer);self._width_timer=None
+        pane=self.right_pane; full=pane.get_allocated_width(); width=self.widths.get('right',350)
+        if opening:
+            self.detail_reveal.show();pane.set_position(full);self.detail_reveal.set_reveal_child(True)
+            start=full;target=max(300,full-width)
+        else:
+            start=pane.get_position();target=full;self.detail_reveal.set_reveal_child(False)
+        def finish():
+            if generation!=self._detail_anim:return
+            pane.set_position(target);self._detail_animating=False
+            if not opening:self.detail_reveal.hide()
+        if not Gtk.Settings.get_default().get_property('gtk-enable-animations'):
+            finish();return
+        began=[None]
+        def frame(_widget,clock):
+            if generation!=self._detail_anim:return False
+            if began[0] is None:began[0]=clock.get_frame_time()
+            t=min(1.0,(clock.get_frame_time()-began[0])/240000);ease=1-(1-t)**3
+            pane.set_position(round(start+(target-start)*ease))
+            if t>=1:finish();return False
+            return True
+        pane.add_tick_callback(frame)
     def close_detail(self,*_):
-        self.detail_generation+=1; self.detail_id=None; self.detail_reveal.set_reveal_child(False)
-        if not self.detail_reveal.get_child_revealed(): self.detail_reveal.hide()
+        self.detail_generation+=1; self.detail_id=None; self.animate_detail(False)
     def show_detail(self,item):
-        self.detail_generation+=1; gen=self.detail_generation; self.detail_id=item['id']; self.detail_title.set_text(item['titulo']); self.detail_due.set_text(item.get('prazo') or ''); self.detail_reminder.set_text(''); self.detail_tags.set_text(''); self.detail_desc.get_buffer().set_text(''); self.detail_status.set_text('Carregando…'); self.detail_fields.set_sensitive(False); self.preview_button.set_active(False); self.detail_reveal.show(); self.right_pane.set_position(max(300,self.right_pane.get_allocated_width()-self.widths.get('right',350))); self.detail_reveal.set_reveal_child(True)
+        self.active_task_id=item['id'];self.detail_generation+=1; gen=self.detail_generation; self.detail_id=item['id']; self.detail_title.set_text(item['titulo']); self.detail_due.set_text(item.get('prazo') or ''); self.detail_reminder.set_text(''); self.detail_tags.set_text(''); self.detail_desc.get_buffer().set_text(''); self.detail_status.set_text('Carregando…'); self.detail_fields.set_sensitive(False); self.preview_button.set_active(False)
+        if not self.detail_reveal.get_reveal_child():self.animate_detail(True)
         def loaded(data):
             if self.detail_id != item['id'] or gen!=self.detail_generation: return False
             value=data['item']; self.details_cache[item['id']]=value; self.detail_title.set_text(value['titulo']); self.detail_due.set_text(value.get('prazo') or ''); self.detail_desc.get_buffer().set_text(value.get('descricao') or '')
             raw=value.get('lembrete_utc')
             try: display=datetime.fromisoformat(raw.replace('Z','+00:00')).astimezone().strftime('%d/%m/%Y %H:%M') if raw else ''
             except ValueError: display=''
-            self.detail_reminder.set_text(display); self.detail_tags.set_text(', '.join(value.get('tags',[]))); self.detail_status.set_text(''); self.detail_fields.set_sensitive(True); return False
+            self.detail_reminder.set_text(display); self.detail_tags.set_text(', '.join(value.get('tags',[]))); self.detail_status.set_text(''); self.detail_fields.set_sensitive(True); self.preview_button.set_active(True); return False
         def failed(message):
             if self.detail_id==item['id'] and gen==self.detail_generation: self.detail_status.set_text('Não foi possível carregar.'); self.error(message)
             return False
@@ -464,7 +494,8 @@ class App(Gtk.Window):
         else: buf.insert_at_cursor(start+end)
         self.detail_desc.grab_focus()
     def toggle_preview(self,button):
-        if not button.get_active(): self.description_stack.set_visible_child_name('edit'); return
+        if not button.get_active(): button.set_label('Ver formatado'); self.description_stack.set_visible_child_name('edit'); return
+        button.set_label('Editar descrição')
         src=self.detail_desc.get_buffer(); text=src.get_text(src.get_start_iter(),src.get_end_iter(),True); self.render_markdown(text,self.preview); self.description_stack.set_visible_child_name('preview')
     def render_markdown(self,text,view):
         from markdown_view import render
