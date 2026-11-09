@@ -1,0 +1,8 @@
+/target
+*.sqlite3*
+.env
+
+/tools/auth_header.py
+
+__pycache__/
+*.py[cod]
